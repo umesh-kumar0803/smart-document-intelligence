@@ -1,0 +1,40 @@
+name: CI Test Suite & Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: "pip"
+
+    - name: Install System Dependencies (Tesseract & Poppler)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y tesseract-ocr tesseract-ocr-eng libgl1 libglib2.0-0 poppler-utils
+
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Generate Sample Test Documents
+      run: |
+        python -c "from app.utils.sample_generator import SampleGenerator; SampleGenerator().generate_all_samples()"
+
+    - name: Run Pytest Test Suite
+      run: |
+        export PYTHONPATH=$PYTHONPATH:.
+        pytest tests/ -v

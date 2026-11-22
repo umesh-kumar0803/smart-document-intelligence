@@ -1,0 +1,132 @@
+"""
+Export helpers for exporting document processing results to JSON, CSV, and summary PDF report.
+"""
+import io
+import json
+import csv
+from typing import Dict, Any, List
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+
+class ExportHelper:
+    """Provides file export capabilities for processed document intelligence results."""
+
+    @staticmethod
+    def to_json(result_dict: Dict[str, Any], indent: int = 2) -> str:
+        """Serializes document analysis result to formatted JSON string."""
+        return json.dumps(result_dict, indent=indent, default=str)
+
+    @staticmethod
+    def to_csv(field_details: List[Dict[str, Any]]) -> str:
+        """Converts extracted fields list into CSV formatted text."""
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Field Name", "Value", "Confidence", "Data Type", "Is Valid", "Validation Notes"])
+
+        for field in field_details:
+            val = field.get("value")
+            if isinstance(val, (list, dict)):
+                val = json.dumps(val)
+            writer.writerow([
+                field.get("field_name", ""),
+                str(val),
+                f"{float(field.get('confidence', 1.0)):.1%}",
+                field.get("data_type", "string"),
+                field.get("is_valid", True),
+                field.get("validation_notes", "") or ""
+            ])
+
+        return output.getvalue()
+
+    @staticmethod
+    def generate_pdf_report(result: Dict[str, Any]) -> bytes:
+        """
+        Creates a PDF Executive Summary Report of the document analysis.
+        """
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+
+        # Header
+        c.setFillColorRGB(0.12, 0.24, 0.45)
+        c.rect(0, height - 70, width, 70, fill=True, stroke=False)
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(40, height - 45, "SMART DOCUMENT INTELLIGENCE - AUDIT REPORT")
+
+        # Metadata Block
+        meta = result.get("metadata", {})
+        c.setFillColorRGB(0.1, 0.1, 0.1)
+        c.setFont("Helvetica-Bold", 11)
+        y = height - 100
+        c.drawString(40, y, "DOCUMENT METADATA:")
+        c.setFont("Helvetica", 9.5)
+        y -= 16
+        c.drawString(40, y, f"Filename: {meta.get('filename', 'Unknown')}")
+        c.drawString(320, y, f"File Type: {meta.get('file_type', 'Unknown')}")
+        y -= 14
+        c.drawString(40, y, f"Processing Time: {meta.get('processing_time_ms', 0):.2f} ms")
+        c.drawString(320, y, f"Word Count: {meta.get('num_words', 0):,}")
+        y -= 14
+        c.drawString(40, y, f"OCR Engine: {meta.get('ocr_engine_used', 'PyMuPDF/OCR')}")
+        c.drawString(320, y, f"Page Count: {meta.get('page_count', 1)}")
+
+        # Classification Block
+        y -= 25
+        clf = result.get("classification", {})
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(40, y, "CLASSIFICATION RESULTS:")
+        y -= 18
+        c.setFont("Helvetica", 10)
+        c.drawString(40, y, f"Predicted Category: {clf.get('category_display_name', 'Unknown')}")
+        conf = float(clf.get('confidence', 0.0))
+        c.drawString(320, y, f"Model Confidence: {conf:.1%}")
+
+        # Validation Block
+        y -= 25
+        val = result.get("validation", {})
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(40, y, "VALIDATION & QUALITY ASSURANCE:")
+        y -= 18
+        c.setFont("Helvetica", 10)
+        c.drawString(40, y, f"Validation Status: {val.get('status', 'Valid')}")
+        c.drawString(320, y, f"Quality Score: {float(val.get('overall_score', 1.0)):.1%}")
+
+        # Extracted Key Fields Table
+        y -= 25
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(40, y, "EXTRACTED STRUCTURED FIELDS:")
+        y -= 18
+
+        c.setFillColorRGB(0.92, 0.94, 0.98)
+        c.rect(40, y - 5, width - 80, 18, fill=True, stroke=False)
+        c.setFillColorRGB(0.1, 0.1, 0.1)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(45, y, "Field Name")
+        c.drawString(200, y, "Extracted Value")
+        c.drawString(460, y, "Confidence")
+
+        fields = result.get("field_details", [])
+        y -= 16
+        c.setFont("Helvetica", 9)
+        for f in fields[:12]:  # Top 12 fields
+            fname = f.get("field_name", "")
+            fval = str(f.get("value", ""))
+            if len(fval) > 45:
+                fval = fval[:42] + "..."
+            fconf = f"{float(f.get('confidence', 1.0)):.1%}"
+            c.drawString(45, y, fname)
+            c.drawString(200, y, fval)
+            c.drawString(460, y, fconf)
+            c.setStrokeColorRGB(0.88, 0.88, 0.88)
+            c.line(40, y - 4, width - 40, y - 4)
+            y -= 18
+
+        # Footer
+        c.setFont("Helvetica-Oblique", 8)
+        c.setFillColorRGB(0.5, 0.5, 0.5)
+        c.drawCentredString(width / 2.0, 30, "Generated by Smart Document Intelligence System - Automated AI Audit")
+
+        c.save()
+        return buffer.getvalue()
